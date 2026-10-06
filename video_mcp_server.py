@@ -185,30 +185,33 @@ def generate_social_kit_with_gemini(script_text: str, topic: str = "") -> Dict[s
     if not api_key or api_key == "tu_clave_de_google_ai_studio_aqui":
         return default_kit
 
-    try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
-        prompt = (
-            "A partir del siguiente guión para video vertical, genera el Kit para Redes Sociales optimizado para viralidad. "
-            "Devuelve estrictamente un JSON válido con estas claves exactas: "
-            "'title' (título llamativo con 1 emoji), "
-            "'description' (descripción breve de máximo 100 caracteres), "
-            "'tiktok_hashtags' (arreglo con exactamente 5 hashtags con #), "
-            "'youtube_tags' (arreglo con exactamente 20 tags relevantes para YouTube Shorts), "
-            "'first_comment' (primer comentario para fijar con CTA de menos de 140 caracteres)."
-        )
-        payload = {
-            "system_instruction": {"parts": [{"text": prompt}]},
-            "contents": [{"parts": [{"text": f"Guión:\n{script_text}"}]}],
-            "generationConfig": {"response_mime_type": "application/json", "temperature": 0.7}
-        }
-        res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=20)
-        if res.status_code == 200:
-            res_json = res.json()
-            raw_text = res_json["candidates"][0]["content"]["parts"][0]["text"]
-            return json.loads(raw_text)
-        return default_kit
-    except Exception:
-        return default_kit
+    candidate_models = ["gemini-flash-lite-latest", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-flash"]
+    prompt = (
+        "A partir del siguiente guión para video vertical, genera el Kit para Redes Sociales optimizado para viralidad. "
+        "Devuelve estrictamente un JSON válido con estas claves exactas: "
+        "'title' (título llamativo con 1 emoji), "
+        "'description' (descripción breve de máximo 100 caracteres), "
+        "'tiktok_hashtags' (arreglo con exactamente 5 hashtags con #), "
+        "'youtube_tags' (arreglo con exactamente 20 tags relevantes para YouTube Shorts), "
+        "'first_comment' (primer comentario para fijar con CTA de menos de 140 caracteres)."
+    )
+    payload = {
+        "system_instruction": {"parts": [{"text": prompt}]},
+        "contents": [{"parts": [{"text": f"Guión:\n{script_text}"}]}],
+        "generationConfig": {"response_mime_type": "application/json", "temperature": 0.7}
+    }
+
+    for model in candidate_models:
+        try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+            res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=20)
+            if res.status_code == 200:
+                res_json = res.json()
+                raw_text = res_json["candidates"][0]["content"]["parts"][0]["text"]
+                return json.loads(raw_text)
+        except Exception:
+            continue
+    return default_kit
 
 
 @mcp.tool()
@@ -445,27 +448,33 @@ def generate_viral_topic_idea() -> str:
             pass
         return chosen
 
-    try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
-        avoid_str = f"NO repitas ninguno de los siguientes temas que ya se usaron antes: {', '.join(used_topics[-15:])}" if used_topics else ""
-        payload = {
-            "contents": [{"parts": [{"text": f"Genera 1 solo tema nuevo, corto e intrigante de misterio, tecnología prohibida, experimentos oscuros o historia secreta ideal para un video viral de TikTok de alto impacto. {avoid_str}. Devuelve ÚNICAMENTE el título/tema en 1 línea, sin comillas ni texto extra."}]}],
-            "generationConfig": {"temperature": 0.9}
-        }
-        res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=15)
-        if res.status_code == 200:
-            idea = res.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
-            chosen = idea if len(idea) > 5 else random.choice(available_fallbacks)
-            used_topics.append(chosen)
-            try:
-                with open(history_file, "w", encoding="utf-8") as f:
-                    json.dump(used_topics[-50:], f, indent=2, ensure_ascii=False)
-            except Exception:
-                pass
-            return chosen
-        return random.choice(available_fallbacks)
-    except Exception:
-        return random.choice(available_fallbacks)
+    candidate_models = ["gemini-flash-lite-latest", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-flash"]
+    avoid_str = f"NO repitas ninguno de los siguientes temas que ya se usaron antes: {', '.join(used_topics[-15:])}" if used_topics else ""
+    payload = {
+        "contents": [{"parts": [{"text": f"Genera 1 solo tema nuevo, corto e intrigante de misterio, tecnología prohibida, experimentos oscuros o historia secreta ideal para un video viral de TikTok de alto impacto. {avoid_str}. Devuelve ÚNICAMENTE el título/tema en 1 línea, sin comillas ni texto extra."}]}],
+        "generationConfig": {"temperature": 0.9}
+    }
+
+    for model in candidate_models:
+        try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+            res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=15)
+            if res.status_code == 200:
+                idea = res.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+                chosen = idea if len(idea) > 5 else random.choice(available_fallbacks)
+                used_topics.append(chosen)
+                try:
+                    with open(history_file, "w", encoding="utf-8") as f:
+                        json.dump(used_topics[-50:], f, indent=2, ensure_ascii=False)
+                except Exception:
+                    pass
+                return chosen
+        except Exception:
+            continue
+
+    chosen = random.choice(available_fallbacks)
+    used_topics.append(chosen)
+    return chosen
 
 
 @mcp.tool()
@@ -505,7 +514,7 @@ def generate_script_and_scenes_gemini(
             "scenes": default_fallback_scenes
         }
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+    candidate_models = ["gemini-flash-lite-latest", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-flash"]
     system_instruction = (
         "Eres el creador y guionista estrella del canal 'guion osc tiktok', experto en retención del 100% en videos cortos de TikTok, Reels y Shorts. "
         "Tu estilo es: narración cinematográfica de misterio, tecnología inquietante, conspiraciones y eventos históricos fascinantes. "
@@ -533,23 +542,25 @@ def generate_script_and_scenes_gemini(
         }
     }
 
-    # Reintentos con backoff exponencial contra límites de tasa
-    for attempt in range(4):
-        try:
-            response = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=30)
-            if response.status_code == 200:
-                res_json = response.json()
-                raw_text = res_json["candidates"][0]["content"]["parts"][0]["text"]
-                data = json.loads(raw_text)
-                raw_pname = data.get("project_name", safe_name)
-                data["project_name"] = "".join(c if c.isalnum() else "_" for c in raw_pname.lower()[:35]).strip("_")
-                return data
-            elif response.status_code == 429:
-                time.sleep(3 + attempt * 2)
-            else:
-                break
-        except Exception:
-            time.sleep(2)
+    for model in candidate_models:
+        for attempt in range(2):
+            try:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+                response = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=30)
+                if response.status_code == 200:
+                    res_json = response.json()
+                    raw_text = res_json["candidates"][0]["content"]["parts"][0]["text"]
+                    data = json.loads(raw_text)
+                    raw_pname = data.get("project_name", safe_name)
+                    data["project_name"] = "".join(c if c.isalnum() else "_" for c in raw_pname.lower()[:35]).strip("_")
+                    return data
+                elif response.status_code == 429:
+                    time.sleep(2)
+                    continue
+                else:
+                    break
+            except Exception:
+                time.sleep(1)
 
     return {
         "project_name": safe_name or "video_proyecto",
@@ -577,32 +588,35 @@ def generate_scenes_from_script(
     if not api_key or api_key == "tu_clave_de_google_ai_studio_aqui":
         return default_scenes
 
-    try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
-        system_instruction = (
-            "Eres un director de fotografía cinematográfica para videos verticales (TikTok, Reels, Shorts). "
-            "Lee el siguiente guión en español y divídelo en 4 o 5 escenas visuales continuas que acompañen el relato. "
-            "Escribe para cada escena un prompt en inglés detallado para Google Veo 2.0 (debe incluir 'Vertical 9:16, cinematic...'). "
-            "Devuelve estrictamente un arreglo JSON de strings: ['Vertical 9:16...', 'Vertical 9:16...']."
-        )
-        payload = {
-            "system_instruction": {"parts": [{"text": system_instruction}]},
-            "contents": [{"parts": [{"text": f"Guión:\n{script_text}"}]}],
-            "generationConfig": {
-                "response_mime_type": "application/json",
-                "temperature": 0.7
-            }
+    candidate_models = ["gemini-flash-lite-latest", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-flash"]
+    system_instruction = (
+        "Eres un director de fotografía cinematográfica para videos verticales (TikTok, Reels, Shorts). "
+        "Lee el siguiente guión en español y divídelo en 4 o 5 escenas visuales continuas que acompañen el relato. "
+        "Escribe para cada escena un prompt en inglés detallado para Google Veo 2.0 (debe incluir 'Vertical 9:16, cinematic...'). "
+        "Devuelve estrictamente un arreglo JSON de strings: ['Vertical 9:16...', 'Vertical 9:16...']."
+    )
+    payload = {
+        "system_instruction": {"parts": [{"text": system_instruction}]},
+        "contents": [{"parts": [{"text": f"Guión:\n{script_text}"}]}],
+        "generationConfig": {
+            "response_mime_type": "application/json",
+            "temperature": 0.7
         }
-        response = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=30)
-        if response.status_code == 200:
-            res_json = response.json()
-            raw_text = res_json["candidates"][0]["content"]["parts"][0]["text"]
-            scenes = json.loads(raw_text)
-            if isinstance(scenes, list) and len(scenes) > 0:
-                return scenes
-        return default_scenes
-    except Exception:
-        return default_scenes
+    }
+
+    for model in candidate_models:
+        try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+            response = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=30)
+            if response.status_code == 200:
+                res_json = response.json()
+                raw_text = res_json["candidates"][0]["content"]["parts"][0]["text"]
+                scenes = json.loads(raw_text)
+                if isinstance(scenes, list) and len(scenes) > 0:
+                    return scenes
+        except Exception:
+            continue
+    return default_scenes
 
 
 @mcp.tool()
@@ -916,27 +930,53 @@ def generate_cinematic_scene_clip(
     clean_p = re.sub(r'[^a-zA-Z0-9\s]', ' ', prompt.lower())
     clean_words = [w for w in clean_p.split() if len(w) > 2 and w not in stop_words]
     
-    # Fallbacks temáticos de calidad comprobada en Pexels
+    # Diccionario de expansión semántica por temas para garantizar variedad sinónima
+    synonym_map = {
+        "scientist": ["researchers dark room", "investigators archival", "vintage observatory", "analysts computer screens"],
+        "scientists": ["researchers looking worried", "investigation archive", "astronomers night telescope", "laboratory technicians"],
+        "laboratory": ["secret underground bunker", "vintage science room", "retro analog monitors", "classified document vault"],
+        "archive": ["classified library books", "vintage file cabinets", "dusty old documents", "secret evidence records"],
+        "ancient": ["mysterious stone ruins", "ancient hieroglyphs carved", "historical relic chamber", "temple dark shadows"],
+        "anomaly": ["abstract glowing energy", "unexplained light phenomenon", "pulsing dimensional portal", "cosmic dark matter"],
+        "bunker": ["concrete underground tunnel", "dark industrial facility", "rusty abandoned shelter", "secret military corridor"],
+        "network": ["digital matrix cyberspace", "global communication satellite", "futuristic server lights", "holographic world data"],
+        "computer": ["vintage terminal green phosphor", "dark server racks blinking", "cyber security control room", "hacker dark screen"],
+        "technology": ["high tech glowing hardware", "quantum computing chips", "surveillance screens room", "futuristic laboratory"]
+    }
+
+    # Fallbacks temáticos rotativos variados
     thematic_fallbacks = [
-        "ancient mystery",
-        "secret laboratory",
-        "dark bunker",
-        "cyber technology",
-        "digital network map",
-        "space galaxy anomaly",
-        "matrix coding"
+        ["ancient mystery", "relic chamber", "pyramid shadow", "old artifact"],
+        ["secret laboratory", "researcher observatory", "retro computer room", "scientists archive"],
+        ["dark bunker", "underground tunnel", "industrial mystery", "abandoned reactor"],
+        ["cyber technology", "server room blinking", "matrix digital flow", "hacker terminal"],
+        ["digital network map", "satellite earth orbit", "global glowing connection", "cyber telemetry"],
+        ["space galaxy anomaly", "deep cosmic nebula", "telescope stars night", "black hole simulation"],
+        ["matrix coding", "cyber security monitor", "futuristic circuit board", "abstract dark light"]
     ]
-    
+
+    expanded_synonyms = []
+    for w in clean_words:
+        if w in synonym_map:
+            expanded_synonyms.extend(synonym_map[w])
+
     queries_to_try = []
+    # 1. Sinónimo expandido si coincide con las palabras clave
+    if expanded_synonyms:
+        random.shuffle(expanded_synonyms)
+        queries_to_try.extend(expanded_synonyms[:2])
+
+    # 2. Combinación limpia de palabras originales
     if len(clean_words) >= 2:
         queries_to_try.append(" ".join(clean_words[:2]))
     if len(clean_words) >= 1:
         queries_to_try.append(clean_words[0])
-    if len(clean_words) >= 3:
-        queries_to_try.append(clean_words[1])
-    queries_to_try.append(thematic_fallbacks[(scene_index - 1) % len(thematic_fallbacks)])
-    queries_to_try.append("mystery technology")
-    queries_to_try.append("dark suspense")
+
+    # 3. Fallbacks temáticos con rotación por escena y aleatoriedad
+    theme_group = thematic_fallbacks[(scene_index - 1) % len(thematic_fallbacks)]
+    queries_to_try.append(random.choice(theme_group))
+    queries_to_try.append("mystery cinematic dark")
+    queries_to_try.append("suspense atmospheric slow")
 
     pexels_key = os.environ.get("PEXELS_API_KEY")
     if not pexels_key or pexels_key == "tu_clave_de_pexels_aqui":

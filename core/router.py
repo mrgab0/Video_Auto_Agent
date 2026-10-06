@@ -28,10 +28,16 @@ class MediaRouter:
     def select_music_source() -> str:
         """
         Determina la fuente de música instrumental:
+        - Si JAMENDO_CLIENT_ID está configurada: 'jamendo' (catálogo libre instrumental)
         - Si TREBLO_API_KEY está configurada: 'treblo'
         - Fallback automático: 'local_library' (assets/music/)
         """
+        jamendo_id = os.environ.get("JAMENDO_CLIENT_ID", "").strip()
+        if jamendo_id and not jamendo_id.startswith("tu_clave"):
+            return "jamendo"
+
         treblo_key = os.environ.get("TREBLO_API_KEY", "").strip()
         if treblo_key and not treblo_key.startswith("tu_clave"):
             return "treblo"
         return "local_library"
+

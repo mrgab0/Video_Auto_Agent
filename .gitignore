@@ -30,3 +30,8 @@ venv/
 
 # Documentos PDF o scratch temporales
 *.pdf
+
+assets/music/*.mp3
+.history_music.json
+.history_videos.json
+
