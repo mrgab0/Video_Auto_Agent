@@ -26,17 +26,26 @@ class AudioWorker:
                 "mode": "mock"
             }
 
-        res = server.generate_voiceover_elevenlabs(
-            text=script_text,
-            output_path=output_path,
-            voice_id=os.environ.get("ELEVENLABS_VOICE_ID", "TX3LPaxmHKxFdv7VOQHJ"),
-            model_id="eleven_multilingual_v2",
-            trim_silence=True,
-            force_refresh=force
-        )
+        try:
+            res = server.generate_voiceover_elevenlabs(
+                text=script_text,
+                output_path=output_path,
+                voice_id=os.environ.get("ELEVENLABS_VOICE_ID", "TX3LPaxmHKxFdv7VOQHJ"),
+                model_id="eleven_multilingual_v2",
+                trim_silence=True,
+                force_refresh=force
+            )
+        except Exception as e:
+            res = str(e)
 
+        # Si ElevenLabs falló por cuota (quota_exceeded) o error, activar TTS neural de respaldo
         if not os.path.exists(output_path) or os.path.getsize(output_path) < 10000:
-            raise RuntimeError(f"Error generando locución con ElevenLabs: {res}")
+            print("  ⚠️ Cuota de ElevenLabs agotada. Activando voz neural de respaldo en español...")
+            from workers.tts_fallback import generate_neural_tts
+            fallback_ok = generate_neural_tts(script_text, output_path, voice="es-MX-JorgeNeural")
+            if not fallback_ok or not os.path.exists(output_path) or os.path.getsize(output_path) < 10000:
+                raise RuntimeError(f"Error generando locución con ElevenLabs y Fallback: {res}")
+            print(f"  🎙️ Locución neural de alta calidad generada con éxito en: {output_path}")
 
         dur_us = server.get_media_duration_us(output_path)
         return {
