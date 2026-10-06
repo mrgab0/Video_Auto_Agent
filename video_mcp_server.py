@@ -947,17 +947,41 @@ def generate_cinematic_scene_clip(
         raise RuntimeError(f"Error: PEXELS_API_KEY no está configurada y fal.ai falló.")
 
     headers = {"Authorization": pexels_key}
+    history_videos_file = Path(__file__).parent / ".history_videos.json"
+    used_video_ids = set()
+    if history_videos_file.exists():
+        try:
+            with open(history_videos_file, "r", encoding="utf-8") as f:
+                used_video_ids = set(json.load(f))
+        except Exception:
+            used_video_ids = set()
     
     for q_term in queries_to_try:
         if not q_term:
             continue
         try:
-            p_url = f"https://api.pexels.com/videos/search?query={requests.utils.quote(q_term)}&orientation=portrait&per_page=6"
+            # Buscar hasta 20 videos por página y rotar páginas aleatoriamente (1 a 3) para máxima variedad
+            page_num = random.randint(1, 3)
+            p_url = f"https://api.pexels.com/videos/search?query={requests.utils.quote(q_term)}&orientation=portrait&per_page=20&page={page_num}"
             p_res = requests.get(p_url, headers=headers, timeout=12)
             if p_res.status_code == 200:
                 videos = p_res.json().get("videos", [])
-                if videos:
-                    chosen_video = videos[(scene_index - 1) % len(videos)]
+                # Filtrar videos que nunca se hayan usado antes
+                fresh_videos = [v for v in videos if v.get("id") not in used_video_ids]
+                candidate_pool = fresh_videos if fresh_videos else videos
+
+                if candidate_pool:
+                    # Selección aleatoria en lugar de índice fijo predecible
+                    chosen_video = random.choice(candidate_pool)
+                    v_id = chosen_video.get("id")
+                    if v_id:
+                        used_video_ids.add(v_id)
+                        try:
+                            with open(history_videos_file, "w", encoding="utf-8") as f:
+                                json.dump(list(used_video_ids)[-100:], f)
+                        except Exception:
+                            pass
+
                     vfiles = chosen_video.get("video_files", [])
                     
                     # Priorizar 720x1280 (HD vertical veloz para móvil) o 1080x1920
@@ -1144,7 +1168,7 @@ def create_capcut_draft_project(
         "material_id": music_id,
         "target_timerange": {"duration": total_duration, "start": 0},
         "source_timerange": {"duration": min(music_duration, total_duration), "start": 0},
-        "volume": 0.15,  # 15% de volumen para música de fondo audible y balanceada
+        "volume": 0.09,  # 9% de volumen sutil para música de fondo
         "speed": 1.0
     }
 
@@ -1216,7 +1240,7 @@ def render_instant_video_ffmpeg(
         f"{v_concat_tags}concat=n={num_videos}:v=1:a=0[v_joined];"
         f"[v_joined]fps=30,format=yuv420p[outv];"
         f"[{voice_idx}:a]volume=1.0[v_voice];"
-        f"[{music_idx}:a]volume=0.15[v_music];"
+        f"[{music_idx}:a]volume=0.09[v_music];"
         f"[v_voice][v_music]amix=inputs=2:duration=first:dropout_transition=2[aout]"
     )
 
