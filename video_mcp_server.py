@@ -1212,3 +1212,83 @@ def render_instant_video_ffmpeg(
 
 if __name__ == "__main__":
     mcp.run()
+
+
+@mcp.tool()
+def generate_video_clip_omni(
+    prompt: str,
+    output_path: str,
+    duration_sec: int = 8,
+    aspect_ratio: str = "9:16"
+) -> str:
+    """
+    Genera un clip de video usando Gemini Omni Flash (gemini-omni-1.1-flash) vía API Interactions.
+    Aprovecha los tokens nativos de Google y devuelve el video en Base64.
+    """
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key or api_key.startswith("tu_clave"):
+        load_dotenv()
+        api_key = os.environ.get("GEMINI_API_KEY")
+
+    if not api_key or api_key.startswith("tu_clave"):
+        return "Error: GEMINI_API_KEY no está configurada para Gemini Omni."
+
+    os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+    url = f"https://generativelanguage.googleapis.com/v1beta/interactions?key={api_key}"
+    payload = {
+        "model": "gemini-omni-1.1-flash",
+        "input": prompt,
+        "response_format": {
+            "type": "video",
+            "aspect_ratio": aspect_ratio,
+            "resolution": "720p"
+        }
+    }
+
+    try:
+        import base64
+        res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=120)
+        if res.status_code == 200:
+            data = res.json()
+            video_b64 = None
+            # Extraer del esquema interactions steps o output_video
+            if "output_video" in data and isinstance(data["output_video"], dict):
+                video_b64 = data["output_video"].get("data")
+            elif "steps" in data:
+                for step in data.get("steps", []):
+                    if step.get("type") == "model_output":
+                        for content in step.get("content", []):
+                            if content.get("type") == "video" and "data" in content:
+                                video_b64 = content["data"]
+                                break
+
+            if video_b64:
+                raw_path = output_path + ".omni_raw.mp4"
+                with open(raw_path, "wb") as f:
+                    f.write(base64.b64decode(video_b64))
+
+                if os.path.exists(raw_path) and os.path.getsize(raw_path) > 10000:
+                    # Normalizar a 30fps fijos y duración
+                    cmd = [
+                        "ffmpeg", "-y",
+                        "-stream_loop", "-1", "-i", raw_path,
+                        "-t", str(duration_sec),
+                        "-vf", "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=30",
+                        "-r", "30",
+                        "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-an",
+                        output_path
+                    ]
+                    subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+                    if os.path.exists(raw_path):
+                        os.remove(raw_path)
+
+                    if os.path.exists(output_path) and os.path.getsize(output_path) > 20000:
+                        return f"✨ Clip generado con Gemini Omni Flash en: {output_path}"
+
+            return f"No se encontró contenido de video en la respuesta de Omni Flash."
+        elif res.status_code == 403:
+            return f"Error de autenticación/clave filtrada en Gemini Omni (403): {res.text[:150]}"
+        else:
+            return f"Error en Gemini Omni Flash API ({res.status_code}): {res.text[:150]}"
+    except Exception as e:
+        return f"Error conectando con Gemini Omni Flash: {str(e)}"
