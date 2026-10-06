@@ -873,6 +873,23 @@ def generate_cinematic_scene_clip(
             pass
 
     # ─────────────────────────────────────────────────────────────
+    # PASO 0.5: Intentar Google Colab GPU propio (Gradio / ComfyUI)
+    # ─────────────────────────────────────────────────────────────
+    colab_url = os.environ.get("COLAB_API_URL")
+    if not colab_url:
+        load_dotenv()
+        colab_url = os.environ.get("COLAB_API_URL")
+
+    if colab_url and not colab_url.startswith("tu_url"):
+        try:
+            from workers.colab_worker import ColabWorker
+            colab_ok = ColabWorker.generate_video_clip(prompt, output_path, duration_sec=duration_sec)
+            if colab_ok and os.path.exists(output_path) and os.path.getsize(output_path) > 20000:
+                return f"✨ Clip generado con tu Google Colab GPU en: {output_path}"
+        except Exception:
+            pass
+
+    # ─────────────────────────────────────────────────────────────
     # PASO 1: Intentar fal.ai (video generado por IA real)
     # ─────────────────────────────────────────────────────────────
     fal_key = os.environ.get("FAL_KEY")
