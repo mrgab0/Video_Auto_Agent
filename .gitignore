@@ -1,0 +1,32 @@
+# Credenciales y variables de entorno críticas
+.env
+.env*.local
+*.key
+
+# Historial de temas generados localmente
+.history_topics.json
+
+# Salidas de render y borradores pesados
+output/
+capcut_drafts/
+cache/
+test_media/
+
+# Archivos temporales de video/audio
+*.raw.mp4
+*.fal_raw.mp4
+*.tmp
+*.mp4
+!assets/**
+
+# Python cache y entornos
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+env/
+venv/
+
+# Documentos PDF o scratch temporales
+*.pdf
