@@ -4,19 +4,24 @@ Maneja decisiones de fallback sin invocar LLMs, ahorrando tokens y garantizando 
 """
 
 import os
-from typing import Tuple
 
 class MediaRouter:
     @staticmethod
     def select_visual_source() -> str:
         """
         Determina qué proveedor de video usar basándose en la configuración de entorno:
-        - Si FAL_KEY está activa y no es placeholder: 'fal_ai'
-        - Fallback automático: 'pexels'
+        1. 'gemini_omni' si GEMINI_API_KEY está activa (consume tokens de Google).
+        2. 'fal_ai' si FAL_KEY está activa.
+        3. 'pexels' como fallback universal de stock real.
         """
+        gemini_key = os.environ.get("GEMINI_API_KEY", "").strip()
+        if gemini_key and not gemini_key.startswith("tu_clave"):
+            return "gemini_omni"
+
         fal_key = os.environ.get("FAL_KEY", "").strip()
         if fal_key and not fal_key.startswith("tu_clave"):
             return "fal_ai"
+
         return "pexels"
 
     @staticmethod

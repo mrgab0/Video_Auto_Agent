@@ -857,6 +857,22 @@ def generate_cinematic_scene_clip(
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
 
     # ─────────────────────────────────────────────────────────────
+    # PASO 0: Intentar Gemini Omni Flash (Tokens de Google)
+    # ─────────────────────────────────────────────────────────────
+    gemini_key = os.environ.get("GEMINI_API_KEY")
+    if not gemini_key:
+        load_dotenv()
+        gemini_key = os.environ.get("GEMINI_API_KEY")
+
+    if gemini_key and not gemini_key.startswith("tu_clave"):
+        try:
+            omni_res = generate_video_clip_omni(prompt, output_path, duration_sec=duration_sec, aspect_ratio="9:16")
+            if os.path.exists(output_path) and os.path.getsize(output_path) > 20000:
+                return omni_res
+        except Exception:
+            pass
+
+    # ─────────────────────────────────────────────────────────────
     # PASO 1: Intentar fal.ai (video generado por IA real)
     # ─────────────────────────────────────────────────────────────
     fal_key = os.environ.get("FAL_KEY")
