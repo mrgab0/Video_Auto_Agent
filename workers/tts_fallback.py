@@ -23,6 +23,7 @@ def generate_neural_tts(text: str, output_path: str, voice: str = "es-MX-JorgeNe
         cmd = [
             "edge-tts",
             "--voice", voice,
+            "--rate", "+5%",
             "--text", text,
             "--write-media", raw_path
         ]

@@ -786,7 +786,7 @@ def _try_fal_ai_video(prompt: str, output_path: str, duration_sec: int, fal_key:
     }
 
     for endpoint in fal_endpoints:
-        raw_path = output_path + ".fal_raw.mp4"
+        raw_path = output_path + ".fal_raw.tmp"
         try:
             res = requests.post(
                 endpoint["url"],
@@ -1034,7 +1034,7 @@ def generate_cinematic_scene_clip(
                         target_file = vfiles[0]
                     
                     if target_file and target_file.get("link"):
-                        raw_stock = output_path + ".raw.mp4"
+                        raw_stock = output_path + ".raw.tmp"
                         # Descarga robusta y rápida con curl en Termux
                         dl_cmd = [
                             "curl", "-s", "-L",
@@ -1077,7 +1077,7 @@ def generate_cinematic_scene_clip(
                 if not target_file:
                     target_file = vfiles[0] if vfiles else None
                 if target_file and target_file.get("link"):
-                    raw_stock = output_path + ".raw.mp4"
+                    raw_stock = output_path + ".raw.tmp"
                     dl_cmd = [
                         "curl", "-s", "-L",
                         "-A", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36",
@@ -1146,6 +1146,7 @@ def create_capcut_draft_project(
             draft_folder = os.path.abspath(f"./capcut_drafts/{project_name}")
 
     os.makedirs(draft_folder, exist_ok=True)
+    Path(draft_folder, ".nomedia").touch(exist_ok=True)
 
     # Duraciones
     video_durations = [get_media_duration_us(p) for p in video_paths]
@@ -1276,9 +1277,12 @@ def render_instant_video_ffmpeg(
     voice_idx = num_videos
     music_idx = num_videos + 1
 
+    voice_dur = get_media_duration_us(voiceover_path) / 1_000_000
+    target_render_dur = round(voice_dur + 0.6, 2)
+
     filter_complex = (
         f"{v_concat_tags}concat=n={num_videos}:v=1:a=0[v_joined];"
-        f"[v_joined]fps=30,format=yuv420p[outv];"
+        f"[v_joined]tpad=stop_mode=clone:stop_duration=5,fps=30,format=yuv420p[outv];"
         f"[{voice_idx}:a]volume=1.0[v_voice];"
         f"[{music_idx}:a]volume=0.09[v_music];"
         f"[v_voice][v_music]amix=inputs=2:duration=first:dropout_transition=2[aout]"
@@ -1289,9 +1293,9 @@ def render_instant_video_ffmpeg(
         *inputs,
         "-filter_complex", filter_complex,
         "-map", "[outv]", "-map", "[aout]",
+        "-t", str(target_render_dur),
         "-c:v", "libx264", "-preset", "veryfast", "-threads", "4",
         "-c:a", "aac", "-b:a", "192k",
-        "-shortest",
         output_path
     ]
 
@@ -1302,7 +1306,7 @@ def render_instant_video_ffmpeg(
             stderr=subprocess.PIPE,
             check=True
         )
-        return f"Video final exportado con éxito en: {output_path}"
+        return f"Video final exportado con éxito ({target_render_dur}s) en: {output_path}"
     except subprocess.CalledProcessError as e:
         return f"Error renderizando con FFmpeg: {e.stderr.decode('utf-8', errors='ignore')}"
 
@@ -1360,7 +1364,7 @@ def generate_video_clip_omni(
                                 break
 
             if video_b64:
-                raw_path = output_path + ".omni_raw.mp4"
+                raw_path = output_path + ".omni_raw.tmp"
                 with open(raw_path, "wb") as f:
                     f.write(base64.b64decode(video_b64))
 

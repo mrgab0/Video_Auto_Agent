@@ -19,16 +19,20 @@ from render.ffmpeg_engine import FFmpegEngine
 from render.capcut_engine import CapCutEngine
 
 class GraphRunner:
-    def __init__(self, project_name: Optional[str] = None, topic: Optional[str] = None, dry_run: bool = False, force: bool = False, resume: bool = True):
+    def __init__(self, project_name: Optional[str] = None, topic: Optional[str] = None, dry_run: bool = False, force: bool = False, resume: bool = True, export_to_gallery: bool = False):
         self.topic = topic
         self.dry_run = dry_run
         self.force = force
         self.resume = resume
+        self.export_to_gallery = export_to_gallery
 
         # Si no se pasó nombre de proyecto, usar el topic o generar slug preliminar
         slug = "".join(c if c.isalnum() else "_" for c in (topic or "video_auto").lower()[:28]).strip("_")
         self.project_name = project_name or slug or "video_auto_agent"
         self.project_dir = Path(f"./output/{self.project_name}").resolve()
+        self.project_dir.mkdir(parents=True, exist_ok=True)
+        # Blindaje para evitar que la galería de Android indexe clips temporales
+        (self.project_dir / ".nomedia").touch(exist_ok=True)
         self.state = ExecutionState(self.project_dir, self.project_name)
 
     def run(self) -> Dict[str, Any]:
@@ -94,25 +98,25 @@ class GraphRunner:
         # -------------------------------------------------------------
         print("\n⚡ [Nodo 2: Fan-Out Paralelo] Iniciando producción concurrente de assets...")
 
-        def run_audio():
-            if self.resume and os.path.exists(voice_path) and os.path.getsize(voice_path) > 10000:
-                dur = server.get_media_duration_us(voice_path) / 1_000_000
-                return {"voice_path": voice_path, "duration_s": dur}
-            return AudioWorker.process(script_text, voice_path, force=self.force, dry_run=self.dry_run)
-
-        def run_visuals():
-            return VisualWorker.process_all_scenes(scenes, self.project_dir, dry_run=self.dry_run, max_workers=3)
-
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            future_audio = executor.submit(run_audio)
-            future_visuals = executor.submit(run_visuals)
-
-            audio_res = future_audio.result()
-            clip_paths = future_visuals.result()
+        # Generar o verificar primero la locución para saber la duración exacta
+        if self.resume and os.path.exists(voice_path) and os.path.getsize(voice_path) > 10000:
+            dur = server.get_media_duration_us(voice_path) / 1_000_000
+            audio_res = {"voice_path": voice_path, "duration_s": dur}
+        else:
+            audio_res = AudioWorker.process(script_text, voice_path, force=self.force, dry_run=self.dry_run)
 
         voice_dur_s = audio_res["duration_s"]
         print(f"  🎙️ Locución lista: {voice_dur_s:.2f}s")
-        print(f"  🎞️ {len(clip_paths)} clips de escena listos y verificados en disco.")
+
+        # Calcular duración dinámica por clip proporcional a la locución (más margen de 1s total)
+        num_scenes = max(1, len(scenes))
+        target_clip_dur = max(7.0, round((voice_dur_s + 1.2) / num_scenes, 1))
+
+        # Generación concurrente de escenas visuales adaptadas a la duración de la voz
+        clip_paths = VisualWorker.process_all_scenes(
+            scenes, self.project_dir, clip_dur=target_clip_dur, dry_run=self.dry_run, max_workers=3
+        )
+        print(f"  🎞️ {len(clip_paths)} clips de escena ({target_clip_dur}s c/u) listos y verificados en disco.")
 
         # Música de fondo
         music_file = MusicWorker.process(music_path, int(voice_dur_s), self.project_name, dry_run=self.dry_run)
@@ -151,12 +155,18 @@ class GraphRunner:
         render_res = FFmpegEngine.render(clip_paths, voice_path, music_file, output_video)
         print(f"  🎬 {render_res}")
 
-        # Sincronización móvil (/sdcard/Movies)
+        # Sincronización a Galería Móvil (/sdcard/Movies) SOLO si fue solicitada explícitamente
         movies_dir = Path("/sdcard/Movies")
-        if movies_dir.exists() and os.path.exists(output_video):
-            target_mobile = movies_dir / f"{self.project_name}_final.mp4"
-            shutil.copy2(output_video, target_mobile)
-            print(f"  📲 Copiado a Galería Móvil: {target_mobile}")
+        if self.export_to_gallery and not self.dry_run and movies_dir.exists() and os.path.exists(output_video):
+            # Solo copiar si es un video real con tamaño válido (> 500 KB)
+            if os.path.getsize(output_video) > 500_000:
+                target_mobile = movies_dir / f"{self.project_name}_final.mp4"
+                shutil.copy2(output_video, target_mobile)
+                print(f"  📲 Copiado a Galería Móvil: {target_mobile}")
+            else:
+                print("  ℹ️ Copia a Galería omitida: El video es demasiado pequeño o simulado.")
+        elif self.export_to_gallery:
+            print("  ℹ️ Copia a Galería omitida: Modo dry-run o carpeta /sdcard/Movies no disponible.")
 
         self.state.mark_completed(
             "node_completed",

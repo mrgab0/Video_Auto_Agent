@@ -13,11 +13,10 @@ from core.router import MediaRouter
 
 class VisualWorker:
     @staticmethod
-    def _process_single_clip(prompt: str, clip_path: str, scene_idx: int, dry_run: bool = False) -> str:
-        """Genera o descarga un clip individual de 8 segundos."""
-        clip_dur = 8
+    def _process_single_clip(prompt: str, clip_path: str, scene_idx: int, clip_dur: float = 8.0, dry_run: bool = False) -> str:
+        """Genera o descarga un clip individual con duración dinámica calculada."""
         if dry_run:
-            mock_utils.create_mock_video_clip(clip_path, duration_sec=clip_dur, color="darkblue", label=f"Escena {scene_idx}")
+            mock_utils.create_mock_video_clip(clip_path, duration_sec=int(clip_dur), color="darkblue", label=f"Escena {scene_idx}")
             return clip_path
 
         retries = 0
@@ -26,7 +25,7 @@ class VisualWorker:
             server.generate_cinematic_scene_clip(
                 prompt=prompt,
                 output_path=clip_path,
-                duration_sec=clip_dur,
+                duration_sec=int(clip_dur),
                 scene_index=scene_idx
             )
 
@@ -36,9 +35,9 @@ class VisualWorker:
         return clip_path
 
     @classmethod
-    def process_all_scenes(cls, scenes: List[str], project_dir: Path, dry_run: bool = False, max_workers: int = 3) -> List[str]:
+    def process_all_scenes(cls, scenes: List[str], project_dir: Path, clip_dur: float = 8.0, dry_run: bool = False, max_workers: int = 3) -> List[str]:
         """
-        Ejecuta el fan-out de generación de clips en paralelo usando ThreadPoolExecutor.
+        Ejecuta el fan-out de generación de clips en paralelo usando ThreadPoolExecutor con duración dinámica.
         """
         project_dir = Path(project_dir)
         tasks = []
@@ -46,7 +45,7 @@ class VisualWorker:
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_idx = {
-                executor.submit(cls._process_single_clip, prompt, clip_paths[idx], idx+1, dry_run): idx
+                executor.submit(cls._process_single_clip, prompt, clip_paths[idx], idx+1, clip_dur, dry_run): idx
                 for idx, prompt in enumerate(scenes)
             }
 
